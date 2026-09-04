@@ -269,6 +269,6 @@ export const api = {
     if (!res.ok) {
       throw new Error(json.message || 'Upload failed');
     }
-    return json.data;
+    return json.data ?? json;
   }
 };

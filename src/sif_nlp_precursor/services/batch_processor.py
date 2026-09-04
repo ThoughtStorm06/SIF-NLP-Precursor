@@ -3,6 +3,7 @@ from pathlib import Path
 from sif_nlp_precursor.services.file_converter import (
     convert_pdf_to_images,
 )
+from sif_nlp_precursor.services.ocr_service import ocr_image
 
 
 SUPPORTED_IMAGE_TYPES = {".png", ".jpg", ".jpeg"}
@@ -53,6 +54,10 @@ def process_extracted_files(
                                 str(image)
                                 for image in image_paths
                             ],
+                            "text": "\n\n".join(
+                                ocr_image(image)
+                                for image in image_paths
+                            ).strip(),
                         }
                     )
 
@@ -63,6 +68,7 @@ def process_extracted_files(
                             "file": str(file_path),
                             "type": "image",
                             "images": [str(file_path)],
+                            "text": ocr_image(file_path),
                         }
                     )
 

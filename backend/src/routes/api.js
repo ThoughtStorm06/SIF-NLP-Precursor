@@ -27,12 +27,10 @@ router.get('/health', (req, res) => {
 });
 
 // Data Upload (Admin Only) - Proxy to Python Backend
-router.use('/upload', requireAdmin, createProxyMiddleware({
+router.post('/upload', requireAdmin, createProxyMiddleware({
   target: PYTHON_BACKEND_URL,
   changeOrigin: true,
-  pathRewrite: {
-    '^/api/upload': '/api/v1/upload-zip',
-  },
+  pathRewrite: () => '/api/v1/upload',
 }));
 
 // Reports & Triage

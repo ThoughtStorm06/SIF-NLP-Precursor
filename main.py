@@ -8,6 +8,11 @@ from src.sif_nlp_precursor.services.file_converter import (
 
 from src.sif_nlp_precursor.services.zip_decoder import extract_zip
 
+from src.sif_nlp_precursor.services.ocr_service import (
+    ocr_image,
+    ocr_pdf,
+)
+
 from src.sif_nlp_precursor.services.batch_processor import (
     process_extracted_files,
 )
@@ -115,6 +120,22 @@ def health_check():
     return {
         "status": "healthy",
         "service": "SIF-NLP-Precursor API",
+    }
+
+
+@app.get("/api/v1/ocr/status")
+def ocr_status():
+    from src.sif_nlp_precursor.services.ocr_service import (
+        MODEL_ID,
+        OCR_ENGINE,
+        _OCR_RUNTIME,
+    )
+
+    return {
+        "engine": OCR_ENGINE,
+        "model": "PP-OCRv6_det_small + PP-OCRv6_rec_small" if OCR_ENGINE == "rapidocr" else MODEL_ID,
+        "loaded": _OCR_RUNTIME is not None,
+        "available": True,
     }
 
 
@@ -797,6 +818,26 @@ async def upload_zip(
         ) from e
 
 
+@app.post("/api/v1/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file was provided.")
+
+    suffix = Path(file.filename).suffix.lower()
+    if suffix == ".zip":
+        return await upload_zip(file)
+    if suffix == ".pdf":
+        return await upload_pdf(file)
+    if suffix in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"}:
+        return await upload_image(file)
+    raise HTTPException(
+        status_code=400,
+        detail="Supported uploads are ZIP, PDF, PNG, JPG, JPEG, WEBP, BMP, and TIFF.",
+    )
+
+
 @app.post("/api/v1/upload-pdf")
 async def upload_pdf(
     file: UploadFile = File(...),
@@ -829,10 +870,8 @@ async def upload_pdf(
             exist_ok=True,
         )
 
-        pdf_path = os.path.join(
-            upload_dir,
-            file.filename,
-        )
+        safe_filename = Path(file.filename).name
+        pdf_path = os.path.join(upload_dir, safe_filename)
 
         file_data = await file.read()
 
@@ -850,27 +889,20 @@ async def upload_pdf(
 
         image_dir = os.path.join(
             output_dir,
-            Path(file.filename).stem,
+            Path(safe_filename).stem,
         )
 
-        image_paths = convert_pdf_to_images(
-            pdf_path=pdf_path,
-            output_dir=image_dir,
-        )
+        ocr_result = ocr_pdf(pdf_path=pdf_path, output_dir=image_dir)
 
         return {
             "message": (
-                "PDF uploaded and converted "
-                "successfully."
+                "PDF uploaded, converted, and OCR processed successfully."
             ),
-            "filename": file.filename,
-            "pages_converted": len(
-                image_paths
-            ),
-            "images": [
-                str(path)
-                for path in image_paths
-            ],
+            "filename": safe_filename,
+            "pages_converted": len(ocr_result["pages"]),
+            "images": [page["image"] for page in ocr_result["pages"]],
+            "text": ocr_result["text"],
+            "pages": ocr_result["pages"],
         }
 
     except HTTPException:
@@ -888,6 +920,9 @@ async def upload_pdf(
             detail=str(e),
         ) from e
 
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -895,3 +930,43 @@ async def upload_pdf(
                 f"Failed to process PDF: {e}"
             ),
         ) from e
+
+
+@app.post("/api/v1/upload-image")
+async def upload_image(
+    file: UploadFile = File(...),
+):
+    try:
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No file was provided.")
+
+        suffix = Path(file.filename).suffix.lower()
+        if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"}:
+            raise HTTPException(status_code=400, detail="Only image files are accepted.")
+
+        file_data = await file.read()
+        if not file_data:
+            raise HTTPException(status_code=400, detail="Uploaded image file is empty.")
+
+        import os
+        upload_dir = Path("data/image_uploads")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        safe_filename = Path(file.filename).name
+        image_path = upload_dir / safe_filename
+        image_path.write_bytes(file_data)
+
+        text = ocr_image(image_path)
+        return {
+            "message": "Image uploaded and OCR processed successfully.",
+            "filename": safe_filename,
+            "text": text,
+            "image": str(image_path),
+        }
+    except HTTPException:
+        raise
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to OCR image: {exc}") from exc

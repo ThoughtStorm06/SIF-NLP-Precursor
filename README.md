@@ -31,6 +31,25 @@ The Python SQLite sample database has been populated with the first five rows
 from `data/sample.csv`, including their structured prediction fields and SPS
 breakdowns.
 
+## LightOnOCR-2 sandbox
+
+The OCR service defaults to the lightweight RapidOCR PP-OCRv6 ONNX engine for
+practical CPU inference and converts PDFs to 200 DPI PyMuPDF images before
+OCR. Run a local image or PDF check with:
+
+```bash
+python scripts/sandbox_lightonocr.py path/to/document.pdf
+```
+
+The first run downloads the compact OCR models. The API routes
+`/api/v1/upload-image`, `/api/v1/upload-pdf`, and `/api/v1/upload` use the same
+OCR service; OCR loads lazily and returns `503` when model dependencies or
+weights are unavailable.
+
+LightOnOCR-2 remains available for GPU or high-memory deployments with
+`OCR_ENGINE=lighton`; it requires approximately 2 GB of model weights and is
+not practical for this machine's CPU runtime.
+
 ## Local model runtime
 
 The model branch includes the inference modules and Git LFS-managed weights:

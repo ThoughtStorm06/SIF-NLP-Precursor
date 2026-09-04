@@ -18,7 +18,9 @@ dependencies = [
     "numpy>=1.24",
     "pandas>=1.5",
     "torch>=2.0",
-    "transformers>=4.35",
+    "transformers>=5.0.0",
+    "rapidocr>=3.9.2",
+    "onnxruntime>=1.20.0",
 ]
 
 [project.scripts]

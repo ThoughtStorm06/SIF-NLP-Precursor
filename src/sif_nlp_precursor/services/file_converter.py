@@ -6,6 +6,7 @@ import pymupdf
 def convert_pdf_to_images(
     pdf_path: str,
     output_dir: str,
+    dpi: int = 200,
 ):
     try:
         pdf_file = Path(pdf_path)
@@ -36,7 +37,10 @@ def convert_pdf_to_images(
 
         try:
             for page_number, page in enumerate(document, start=1):
-                pixmap = page.get_pixmap()
+                scale = dpi / 72
+                longest_page_dimension = max(page.rect.width, page.rect.height)
+                scale = min(scale, 1540 / longest_page_dimension)
+                pixmap = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
 
                 image_path = (
                     output_path
