@@ -74,6 +74,9 @@ router.post('/mlops/rollback', rollbackModel);
 router.use('/v1', createProxyMiddleware({
   target: PYTHON_BACKEND_URL,
   changeOrigin: true,
+  pathRewrite: {
+    '^/': '/api/v1/'
+  }
 }));
 
 export default router;
