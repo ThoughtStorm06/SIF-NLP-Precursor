@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File 
-from src.sif_nlp_precursor.services.zip_decoder import extract_zip
+from sif_nlp_precursor.services.zip_decoder import extract_zip
 
 from sif_nlp_precursor.database.connection import SessionLocal
 from sif_nlp_precursor.database.crud import create_prediction_feedback
