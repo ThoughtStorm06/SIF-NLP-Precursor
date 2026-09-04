@@ -1034,6 +1034,39 @@ def upload_status(job_id: str):
     finally:
         db.close()
 
+
+@app.get("/api/v1/upload-report/{case_id}")
+def get_uploaded_report(case_id: str):
+    db = SessionLocal()
+    try:
+        incident = db.query(Incident).filter(Incident.case_id == case_id).first()
+        if incident is None:
+            raise HTTPException(status_code=404, detail="Uploaded report not found.")
+        prediction = incident.predictions[0] if incident.predictions else None
+        if prediction is None:
+            raise HTTPException(status_code=409, detail="Uploaded report is still being classified.")
+        return {
+            "id": incident.case_id,
+            "title": incident.title,
+            "narrative": incident.narrative,
+            "status": "Pending Triage",
+            "input_type": incident.input_type,
+            "processing_type": incident.processing_type,
+            "sps": prediction.sps,
+            "sps_tier": "Critical" if prediction.sps >= 75 else "High" if prediction.sps >= 60 else "Medium",
+            "confidence": prediction.confidence,
+            "energy_source": prediction.energy_source,
+            "energy_level": prediction.energy_level,
+            "exposure_type": prediction.exposure_type,
+            "barrier_status": prediction.barrier_status,
+            "life_saving_rule": prediction.life_saving_rule,
+            "recorded_severity": prediction.recorded_severity,
+            "evidence_spans": [{"text": prediction.evidence_phrase, "verified": prediction.evidence_verified}],
+            "sps_breakdown": prediction.sps_breakdown,
+        }
+    finally:
+        db.close()
+
 async def upload_text(file: UploadFile):
     try:
         content = await file.read()

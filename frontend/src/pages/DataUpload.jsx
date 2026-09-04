@@ -53,7 +53,7 @@ export const DataUpload = () => {
       }
       if (result.status === 'failed') throw new Error(result.error || result.message);
       if (result.report) addReport(result.report);
-      updateFile({ status: 'Complete', progress: 100, reportId: result.case_id });
+      updateFile({ status: 'Complete', progress: 100, reportId: result.case_id, backendMessage: 'Report stored and available across all views' });
       await refreshReports();
     } catch (err) {
       updateFile({ status: 'Rejected', progress: 100, error: 'Processing failed: ' + err.message });

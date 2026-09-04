@@ -12,6 +12,9 @@ export const AppProvider = ({ children }) => {
   const [role, setRole] = useState(() => readSession('sif.role', 'hse_officer'));
   const [currentView, setCurrentView] = useState(() => readSession('sif.view', 'triage'));
   const [reports, setReports] = useState([]);
+  const [uploadedReports, setUploadedReports] = useState(() => {
+    try { return JSON.parse(window.localStorage.getItem('sif.uploadedReports') || '[]'); } catch { return []; }
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -45,10 +48,11 @@ export const AppProvider = ({ children }) => {
       window.localStorage.setItem('sif.mode', mode);
       window.localStorage.setItem('sif.role', role);
       window.localStorage.setItem('sif.view', currentView);
+      window.localStorage.setItem('sif.uploadedReports', JSON.stringify(uploadedReports.slice(0, 50)));
     } catch {
       // Session persistence is best effort when storage is unavailable.
     }
-  }, [theme, mode, role, currentView]);
+  }, [theme, mode, role, currentView, uploadedReports]);
 
   // Pagination state
   const [page, setPage] = useState(1);
@@ -79,7 +83,8 @@ export const AppProvider = ({ children }) => {
       const data = await api.getReports(params);
       
       if (data && typeof data === 'object' && Array.isArray(data.reports)) {
-        setReports(data.reports);
+        const uploaded = uploadedReports.filter(uploadedReport => !data.reports.some(report => String(report.id) === String(uploadedReport.id)));
+        setReports([...uploaded, ...data.reports]);
         setTotalCount(data.total || data.reports.length);
         setTotalPages(data.totalPages || 1);
       } else if (Array.isArray(data)) {
@@ -120,7 +125,8 @@ export const AppProvider = ({ children }) => {
           setTotalCount(fbData.length);
           setTotalPages(Math.ceil(fbData.length / limit));
           const start = (page - 1) * limit;
-          setReports(fbData.slice(start, start + limit));
+          const uploaded = uploadedReports.filter(uploadedReport => !fbData.some(report => String(report.id) === String(uploadedReport.id)));
+          setReports([...uploaded, ...fbData.slice(start, start + limit)]);
         }
       } catch (e) {
         setError(err.message);
@@ -129,7 +135,7 @@ export const AppProvider = ({ children }) => {
       setLoading(false);
       setLastUpdated(new Date());
     }
-  }, [subView, filterAsset, filterStatus, searchQuery, page, limit]);
+  }, [subView, filterAsset, filterStatus, searchQuery, page, limit, uploadedReports]);
 
   useEffect(() => {
     fetchReports();
@@ -177,7 +183,15 @@ export const AppProvider = ({ children }) => {
           setReports(prev => [fetched, ...prev]);
         }
       } catch (err) {
-        console.warn(`Could not fetch report ${strId} via API, trying seed fallback:`, err.message);
+        try {
+          const uploaded = await api.getUploadedReport(strId);
+          setActiveReportData(uploaded);
+          setUploadedReports(prev => [uploaded, ...prev.filter(report => String(report.id) !== strId)]);
+          setReports(prev => [uploaded, ...prev.filter(report => String(report.id) !== strId)]);
+          return;
+        } catch (uploadedError) {
+          console.warn(`Could not fetch report ${strId} via API, trying seed fallback:`, uploadedError.message);
+        }
         try {
           const res = await fetch('/database/seed/seedData.json');
           if (res.ok) {
@@ -259,7 +273,10 @@ export const AppProvider = ({ children }) => {
     notification,
     showToast,
     refreshReports: fetchReports,
-    addReport: (report) => setReports(prev => [report, ...prev]),
+    addReport: (report) => {
+      setReports(prev => [report, ...prev.filter(existing => String(existing.id) !== String(report.id))]);
+      setUploadedReports(prev => [report, ...prev.filter(existing => String(existing.id) !== String(report.id))]);
+    },
     lastUpdated
   };
 

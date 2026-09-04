@@ -29,6 +29,13 @@ export const api = {
     return json.data;
   },
 
+  getUploadedReport: async (id) => {
+    const res = await fetch(`${API_BASE}/v1/upload-report/${encodeURIComponent(id)}`);
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.detail || json.message || `Failed to fetch uploaded report ${id}`);
+    return json;
+  },
+
   overrideReport: async (id, { newTier, reason, notes }, role = 'hse_officer') => {
     const res = await fetch(`${API_BASE}/reports/${id}/override`, {
       method: 'POST',
