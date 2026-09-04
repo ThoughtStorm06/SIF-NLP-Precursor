@@ -3,6 +3,13 @@ import { api } from '../services/api.js';
 
 const AppContext = createContext(null);
 
+const normalizeReport = (report) => ({
+  ...report,
+  recorded_severity: report?.recorded_severity && typeof report.recorded_severity === 'object'
+    ? Object.values(report.recorded_severity).join(', ')
+    : report?.recorded_severity || 'Unknown'
+});
+
 export const AppProvider = ({ children }) => {
   const readSession = (key, fallback) => {
     try { return window.localStorage.getItem(key) || fallback; } catch { return fallback; }
@@ -13,7 +20,9 @@ export const AppProvider = ({ children }) => {
   const [currentView, setCurrentView] = useState(() => readSession('sif.view', 'triage'));
   const [reports, setReports] = useState([]);
   const [uploadedReports, setUploadedReports] = useState(() => {
-    try { return JSON.parse(window.localStorage.getItem('sif.uploadedReports') || '[]'); } catch { return []; }
+    try {
+      return JSON.parse(window.localStorage.getItem('sif.uploadedReports') || '[]').map(normalizeReport);
+    } catch { return []; }
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -84,7 +93,7 @@ export const AppProvider = ({ children }) => {
       
       if (data && typeof data === 'object' && Array.isArray(data.reports)) {
         const uploaded = uploadedReports.filter(uploadedReport => !data.reports.some(report => String(report.id) === String(uploadedReport.id)));
-        setReports([...uploaded, ...data.reports]);
+        setReports([...uploaded.map(normalizeReport), ...data.reports.map(normalizeReport)]);
         setTotalCount(data.total || data.reports.length);
         setTotalPages(data.totalPages || 1);
       } else if (Array.isArray(data)) {
@@ -126,7 +135,7 @@ export const AppProvider = ({ children }) => {
           setTotalPages(Math.ceil(fbData.length / limit));
           const start = (page - 1) * limit;
           const uploaded = uploadedReports.filter(uploadedReport => !fbData.some(report => String(report.id) === String(uploadedReport.id)));
-          setReports([...uploaded, ...fbData.slice(start, start + limit)]);
+          setReports([...uploaded.map(normalizeReport), ...fbData.slice(start, start + limit).map(normalizeReport)]);
         }
       } catch (e) {
         setError(err.message);
@@ -185,9 +194,10 @@ export const AppProvider = ({ children }) => {
       } catch (err) {
         try {
           const uploaded = await api.getUploadedReport(strId);
-          setActiveReportData(uploaded);
-          setUploadedReports(prev => [uploaded, ...prev.filter(report => String(report.id) !== strId)]);
-          setReports(prev => [uploaded, ...prev.filter(report => String(report.id) !== strId)]);
+          const normalized = normalizeReport(uploaded);
+          setActiveReportData(normalized);
+          setUploadedReports(prev => [normalized, ...prev.filter(report => String(report.id) !== strId)]);
+          setReports(prev => [normalized, ...prev.filter(report => String(report.id) !== strId)]);
           return;
         } catch (uploadedError) {
           console.warn(`Could not fetch report ${strId} via API, trying seed fallback:`, uploadedError.message);
@@ -274,8 +284,9 @@ export const AppProvider = ({ children }) => {
     showToast,
     refreshReports: fetchReports,
     addReport: (report) => {
-      setReports(prev => [report, ...prev.filter(existing => String(existing.id) !== String(report.id))]);
-      setUploadedReports(prev => [report, ...prev.filter(existing => String(existing.id) !== String(report.id))]);
+      const normalized = normalizeReport(report);
+      setReports(prev => [normalized, ...prev.filter(existing => String(existing.id) !== String(normalized.id))]);
+      setUploadedReports(prev => [normalized, ...prev.filter(existing => String(existing.id) !== String(normalized.id))]);
     },
     lastUpdated
   };
