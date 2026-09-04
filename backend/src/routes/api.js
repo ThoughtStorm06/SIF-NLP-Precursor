@@ -6,9 +6,11 @@ import { getModels, getDriftMetrics, getShadowComparison, getFeedbackMetrics, ge
 import { validateOverride } from '../validators/overrideValidator.js';
 import { validateCapa } from '../validators/capaValidator.js';
 
-import { uploadFile } from '../controllers/uploadController.js';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 
 const router = Router();
+
+const PYTHON_BACKEND_URL = process.env.PYTHON_BACKEND_URL || 'http://127.0.0.1:8000';
 
 // Middleware to enforce Admin role for specific routes
 const requireAdmin = (req, res, next) => {
@@ -24,8 +26,14 @@ router.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString(), service: 'sif-sentinel-api' });
 });
 
-// Data Upload (Admin Only)
-router.post('/upload', requireAdmin, uploadFile);
+// Data Upload (Admin Only) - Proxy to Python Backend
+router.use('/upload', requireAdmin, createProxyMiddleware({
+  target: PYTHON_BACKEND_URL,
+  changeOrigin: true,
+  pathRewrite: {
+    '^/api/upload': '/api/v1/upload-zip',
+  },
+}));
 
 // Reports & Triage
 router.get('/reports', getReports);
@@ -61,5 +69,11 @@ router.get('/mlops/fairness', getFairnessMetrics);
 router.get('/mlops/audit-trail', getAuditTrail);
 router.post('/mlops/promote', promoteModel);
 router.post('/mlops/rollback', rollbackModel);
+
+// Proxy all /v1 requests directly to Python
+router.use('/v1', createProxyMiddleware({
+  target: PYTHON_BACKEND_URL,
+  changeOrigin: true,
+}));
 
 export default router;

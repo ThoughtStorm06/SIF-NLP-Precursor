@@ -1,0 +1,34 @@
+{
+  "name": "sif-nlp-precursor",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "concurrently": "^10.0.5",
+    "esbuild": "^0.21.5",
+    "nanoid": "^3.3.18",
+    "picocolors": "^1.1.1",
+    "postcss": "^8.5.28",
+    "rollup": "^4.63.1",
+    "source-map-js": "^1.2.1",
+    "vite": "^5.4.21"
+  },
+  "scripts": {
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:python": "C:\\Users\\Admin\\.local\\bin\\uv run uvicorn main:app --reload --port 8000",
+    "dev:all": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\" \"npm run dev:python\"",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/karthik-garlapally/SIF-NLP-Precursor.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/karthik-garlapally/SIF-NLP-Precursor/issues"
+  },
+  "homepage": "https://github.com/karthik-garlapally/SIF-NLP-Precursor#readme"
+}
