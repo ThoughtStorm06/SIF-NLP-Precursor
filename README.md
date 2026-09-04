@@ -8,6 +8,26 @@ The application backend is under `backend/`. Install the project dependencies
 with the repository's configured Python/Node tooling and use the backend's
 existing server entry point.
 
+The frontend uses the Node API at `http://localhost:5000`, and the Node API
+proxies `/api/v1/*` requests to the Python service at `http://localhost:8000`.
+Start all three services with:
+
+```bash
+npm run dev:all
+```
+
+The Python service initializes its local SQLite tables in `data/sif.db` on
+startup. To regenerate the Node seed fixture from five rows in the downloaded
+dataset, run:
+
+```bash
+npm run seed:sample
+```
+
+The Python SQLite sample database has been populated with the first five rows
+from `data/sample.csv`, including their structured prediction fields and SPS
+breakdowns.
+
 ## Local model runtime
 
 The model branch includes the inference modules and Git LFS-managed weights:
@@ -24,6 +44,11 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 python inference_pipeline.py \
   --narrative "A worker fell from a ladder and fractured a wrist."
 ```
+
+The model command requires the Python environment to provide `torch`,
+`transformers`, `pandas`, and the local checkpoint files. The API and database
+smoke checks can run without loading neural weights, but actual inference
+cannot run until those model dependencies are installed.
 
 Generated reasoning is structure-guided but not strictly factual; treat it as
 human-reviewed decision support.

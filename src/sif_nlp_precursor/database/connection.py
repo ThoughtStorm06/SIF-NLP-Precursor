@@ -3,6 +3,8 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from sif_nlp_precursor.database.models import Base
+
 
 # ============================================================
 # DATABASE PATH
@@ -59,3 +61,6 @@ SessionLocal = sessionmaker(
     autoflush=False,
     autocommit=False,
 )
+
+# Keep the local SQLite service runnable without a separate migration step.
+Base.metadata.create_all(bind=engine)

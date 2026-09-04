@@ -2,7 +2,10 @@ from fastapi import FastAPI, HTTPException, UploadFile, File
 from sif_nlp_precursor.services.zip_decoder import extract_zip
 
 from sif_nlp_precursor.database.connection import SessionLocal
-from sif_nlp_precursor.database.crud import create_prediction_feedback
+from sif_nlp_precursor.database.crud import (
+    create_incident_and_prediction,
+    create_prediction_feedback,
+)
 from sif_nlp_precursor.database.models import (
     Incident,
     Prediction,
@@ -20,12 +23,51 @@ from sif_nlp_precursor.schemas.report import (
     SimilarReportsResponse,
     TaxonomyResponse,
 )
+from sif_nlp_precursor.schemas.nlp_result import NLPResult, SPSBreakdown
 
 
 app = FastAPI(
     title="SIF-NLP-Precursor API",
     version="1.0.0",
 )
+
+_MODEL_RUNTIME = None
+
+
+def _get_model_runtime():
+    global _MODEL_RUNTIME
+    if _MODEL_RUNTIME is not None:
+        return _MODEL_RUNTIME
+
+    try:
+        from inference_pipeline import load_bert_model
+        import config as model_config
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Model dependencies are unavailable. Install torch, transformers, "
+                f"and pandas before calling analyze: {exc}"
+            ),
+        ) from exc
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    bert_model, bert_tokenizer = load_bert_model(
+        f"{model_config.OUTPUT_DIR}/best_model.pt", device
+    )
+    gen_tokenizer = AutoTokenizer.from_pretrained(
+        f"{model_config.GEN_OUTPUT_DIR}/best_gen_model",
+        local_files_only=True,
+    )
+    gen_model = AutoModelForCausalLM.from_pretrained(
+        f"{model_config.GEN_OUTPUT_DIR}/best_gen_model",
+        local_files_only=True,
+    ).to(device)
+    gen_model.eval()
+    _MODEL_RUNTIME = (bert_model, bert_tokenizer, gen_model, gen_tokenizer, device)
+    return _MODEL_RUNTIME
 
 
 @app.get("/health")
@@ -44,6 +86,17 @@ def analyze_report(report: ReportInput):
     db = SessionLocal()
 
     try:
+        from inference_pipeline import predict_full_record
+        bert_model, bert_tokenizer, gen_model, gen_tokenizer, device = _get_model_runtime()
+        predicted = predict_full_record(
+            report.content,
+            bert_model,
+            bert_tokenizer,
+            gen_model,
+            gen_tokenizer,
+            device,
+        )
+
         # Get the next database ID
         last_incident = (
             db.query(Incident)
@@ -57,27 +110,76 @@ def analyze_report(report: ReportInput):
             next_id = last_incident.id + 1
 
         case_id = f"CASE-{next_id:07d}"
-
-        # Create the initial incident
-        incident = Incident(
+        raw_breakdown = predicted["sps_breakdown"]
+        breakdown = SPSBreakdown(
+            energy_level_pts=raw_breakdown.get("energy_level_pts", 0),
+            exposure_pts=raw_breakdown.get(
+                "exposure_pts", raw_breakdown.get("exposure_type_pts", 0)
+            ),
+            barrier_pts=raw_breakdown.get(
+                "barrier_pts", raw_breakdown.get("barrier_status_pts", 0)
+            ),
+            counterfactual_pts=raw_breakdown.get("counterfactual_pts", 0),
+            raw_total=raw_breakdown.get("raw_total", raw_breakdown.get("raw_score", 0)),
+            max_possible=raw_breakdown.get("max_possible", raw_breakdown.get("max_raw_score", 16)),
+        )
+        nlp_result = NLPResult(
             case_id=case_id,
             narrative=report.content,
-            title=None,
+            title="Model analyzed safety report",
+            energy_source=predicted["energy_source"],
+            energy_level=predicted["energy_level"],
+            exposure_type=predicted["exposure_type"],
+            barrier_status=predicted["barrier_status"],
+            life_saving_rule=predicted["life_saving_rule"],
+            counterfactual_could_be_fatal_or_permanent=predicted[
+                "counterfactual_could_be_fatal_or_permanent"
+            ],
+            counterfactual_reasoning=predicted["counterfactual_reasoning"],
+            evidence_phrase=predicted["evidence_phrase"],
+            recorded_severity={
+                str(index + 1): label
+                for index, label in enumerate(predicted["recorded_severity"])
+            },
+            confidence=predicted["confidence"],
+            evidence_verified=predicted["evidence_verified"],
+            sps=predicted["sps"],
+            sps_breakdown=breakdown,
+        )
+        incident, prediction = create_incident_and_prediction(
+            db=db,
+            case_id=case_id,
+            narrative=report.content,
             input_type=report.file_type,
             processing_type="individual",
             created_by="user",
+            nlp_result=nlp_result,
         )
-
-        db.add(incident)
-        db.commit()
-        db.refresh(incident)
 
         return ReportReceivedResponse(
             case_id=incident.case_id,
             file_type=report.file_type,
-            message="Safety report received successfully.",
+            message="Safety report analyzed and stored successfully.",
+            prediction={
+                "energy_source": prediction.energy_source,
+                "energy_level": prediction.energy_level,
+                "exposure_type": prediction.exposure_type,
+                "barrier_status": prediction.barrier_status,
+                "life_saving_rule": prediction.life_saving_rule,
+                "recorded_severity": prediction.recorded_severity,
+                "confidence": prediction.confidence,
+                "evidence_phrase": prediction.evidence_phrase,
+                "sps": prediction.sps,
+                "sps_breakdown": prediction.sps_breakdown,
+                "counterfactual_reasoning": prediction.counterfactual_reasoning,
+                "model_version": prediction.model_version,
+            },
+            model_status="predicted",
         )
 
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(

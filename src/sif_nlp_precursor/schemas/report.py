@@ -12,6 +12,8 @@ class ReportReceivedResponse(BaseModel):
     case_id: str
     file_type: str
     message: str
+    prediction: dict | None = None
+    model_status: str = "stored"
 
 
 class ReportHistoryItem(BaseModel):

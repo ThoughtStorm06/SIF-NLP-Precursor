@@ -1,6 +1,18 @@
 const API_BASE = '/api';
 
 export const api = {
+  // Python model service
+  analyzeReport: async (content, fileType = 'txt') => {
+    const res = await fetch(`${API_BASE}/v1/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_type: fileType, content })
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.detail || json.message || 'Failed to analyze report');
+    return json;
+  },
+
   // Reports
   getReports: async (params = {}) => {
     const query = new URLSearchParams(params).toString();

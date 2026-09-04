@@ -5,8 +5,12 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const csvPath = path.resolve(__dirname, '../../sample.csv');
+const csvPath = path.resolve(__dirname, '../data/sample.csv');
 const outputPath = path.resolve(__dirname, '../database/seed/seedData.json');
+const limitArgIndex = process.argv.indexOf('--limit');
+const sampleLimit = limitArgIndex === -1
+  ? null
+  : Number.parseInt(process.argv[limitArgIndex + 1], 10);
 
 const OIL_ASSETS = [
   'Rig-04 Dibrugarh (Upstream Drilling)',
@@ -68,6 +72,11 @@ function parseCSVLine(line) {
 }
 
 function convert() {
+  if (sampleLimit !== null && (!Number.isInteger(sampleLimit) || sampleLimit < 1)) {
+    console.error('--limit must be a positive integer');
+    process.exit(1);
+  }
+
   console.log(`Reading CSV from ${csvPath}...`);
   if (!fs.existsSync(csvPath)) {
     console.error(`CSV file not found at ${csvPath}`);
@@ -103,6 +112,7 @@ function convert() {
   let idCounter = 1;
 
   for (let i = 1; i < lines.length; i++) {
+    if (sampleLimit !== null && reports.length >= sampleLimit) break;
     if (!lines[i].trim()) continue;
     const row = parseCSVLine(lines[i]);
     if (row.length < header.length) continue;

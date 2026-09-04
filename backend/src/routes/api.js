@@ -6,7 +6,7 @@ import { getModels, getDriftMetrics, getShadowComparison, getFeedbackMetrics, ge
 import { validateOverride } from '../validators/overrideValidator.js';
 import { validateCapa } from '../validators/capaValidator.js';
 
-import { createProxyMiddleware } from 'http-proxy-middleware';
+import { createProxyMiddleware, fixRequestBody } from 'http-proxy-middleware';
 
 const router = Router();
 
@@ -74,6 +74,9 @@ router.post('/mlops/rollback', rollbackModel);
 router.use('/v1', createProxyMiddleware({
   target: PYTHON_BACKEND_URL,
   changeOrigin: true,
+  on: {
+    proxyReq: fixRequestBody,
+  },
   pathRewrite: {
     '^/': '/api/v1/'
   }
