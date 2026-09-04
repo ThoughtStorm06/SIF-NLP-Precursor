@@ -1,81 +1,106 @@
 # SIF NLP Precursor
 
-Backend and local inference runtime for the SIF incident analysis system.
+A full-stack, autonomous system for Serious Injury & Fatality (SIF) precursor detection using state-of-the-art natural language processing (NLP). 
 
-## Backend
+This repository contains the complete stack: a React frontend, a Node.js management API, and a Python FastAPI service powering local ML inference and OCR capabilities.
 
-The application backend is under `backend/`. Install the project dependencies
-with the repository's configured Python/Node tooling and use the backend's
-existing server entry point.
+## Architecture
 
-The frontend uses the Node API at `http://localhost:5000`, and the Node API
-proxies `/api/v1/*` requests to the Python service at `http://localhost:8000`.
-Start all three services with:
+The project employs a microservices-style architecture to separate the presentation layer, the data/management API, and the heavy machine learning workloads.
+
+```mermaid
+graph TD
+    Client([Client Browser]) -->|HTTP/HTTPS| Frontend[React Vite Frontend]
+    Frontend -->|API Requests| NodeAPI[Node.js Express Backend]
+    
+    NodeAPI -.->|Proxies /api/v1/*| PythonAPI[Python FastAPI Backend]
+    NodeAPI -->|Handles Analytics, CAPA, Models| NodeAPI
+    
+    PythonAPI -->|Inference| BERT[Tuned BERT Encoder]
+    PythonAPI -->|Inference| Qwen[Tuned Qwen Decoder]
+    PythonAPI -->|Read/Write| SQLite[(SQLite Database)]
+    PythonAPI -->|Document Processing| OCR[RapidOCR Engine]
+```
+
+### Components:
+- **Frontend (React/Vite)**: Located in `frontend/`. A modern UI for viewing reports, CAPA actions, ML analytics, and submitting documents for OCR/inference.
+- **Node.js Backend (Express)**: Located in `backend/`. Handles API requests, orchestration, and proxies ML-specific requests (`/api/v1/*`) to the Python backend.
+- **Python Backend (FastAPI)**: Located in the root directory. Manages the ML inference pipeline, PyTorch/Transformers dependencies, and the SQLite database.
+
+## Quick Start (Development)
+
+You can run the entire stack (Frontend, Node API, Python API, and a Localtunnel) concurrently using a single script.
 
 ```bash
+# Install root dependencies
+npm install
+
+# Start the full stack
 npm run dev:all
 ```
 
-The Python service initializes its local SQLite tables in `data/sif.db` on
-startup. To regenerate the Node seed fixture from five rows in the downloaded
-dataset, run:
+This starts:
+1. **Frontend**: `http://localhost:5173`
+2. **Node Backend**: `http://localhost:5000`
+3. **Python Backend**: `http://localhost:8000`
+4. **Tunnel**: Automatically exposes the Node backend via Localtunnel for remote/Vercel connectivity.
+
+## Deployment (Hybrid Approach)
+
+Due to the size of the machine learning models (~1.3GB), the Python backend cannot be deployed to standard Serverless Functions (e.g., Vercel's free tier). 
+
+**Recommended Setup:**
+1. **Frontend**: Deployed to Vercel. Vercel automatically detects the `vercel.json` file, builds the React app, and rewrites `/api/*` requests to your tunnel URL.
+2. **Backend**: Run locally (via `npm run dev:all`) and exposed via Localtunnel, or containerized via Docker and deployed to a service like Render or HuggingFace Spaces.
+
+### Deploying to Vercel (No Credentials in Code)
+You do **not** need to add any credentials or secrets to your codebase to deploy to Vercel. The `vercel.json` file handles configuration, while authentication is securely handled outside of your code in two ways:
+
+1. **Dashboard Deployment**: Push your code to GitHub, log into [Vercel](https://vercel.com) using your GitHub account, and import the repository. Vercel automatically handles the rest.
+2. **CLI Deployment**: Run `npx vercel` in your terminal. It will prompt you to authenticate via your browser and securely save an access token locally on your machine.
+
+## Model Runtime & Checkpoints
+
+The Python ML service uses Git LFS to manage large model checkpoints:
+- `inference_pipeline.py` - End-to-end structured prediction and reasoning.
+- `backbone_bert/` - Local BERT backbone and tokenizer.
+- `checkpoints_encoder_tuned/` - Tuned encoder checkpoint.
+- `checkpoints_gen_final_tuned/` - Tuned Qwen decoder checkpoint.
+
+To run a local prediction script manually:
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+python inference_pipeline.py \
+  --narrative "A worker fell from a ladder and fractured a wrist."
+```
+*Note: Ensure your Python environment has `torch`, `transformers`, and `pandas` installed.*
+
+## Data & Database Initialization
+
+The Python service initializes its local SQLite tables in `data/sif.db` on startup. 
+To generate the Node seed fixture from the first five rows in `data/sample.csv` and populate the SQLite store:
 
 ```bash
+# Generate seed data for Node
 npm run seed:sample
 
 # Populate the Python SQLite store from the generated seed records
 npm run seed:sqlite
 ```
 
-The Python SQLite sample database has been populated with the first five rows
-from `data/sample.csv`, including their structured prediction fields and SPS
-breakdowns.
+## OCR Sandbox
 
-## LightOnOCR-2 sandbox
+The OCR service defaults to the lightweight RapidOCR PP-OCRv6 ONNX engine for practical CPU inference, converting PDFs to 200 DPI PyMuPDF images before OCR. 
 
-The OCR service defaults to the lightweight RapidOCR PP-OCRv6 ONNX engine for
-practical CPU inference and converts PDFs to 200 DPI PyMuPDF images before
-OCR. Run a local image or PDF check with:
-
+Run a local image or PDF check with:
 ```bash
 python scripts/sandbox_lightonocr.py path/to/document.pdf
 ```
+*(The first run will download the compact OCR models automatically).*
 
-The first run downloads the compact OCR models. The API routes
-`/api/v1/upload-image`, `/api/v1/upload-pdf`, and `/api/v1/upload` use the same
-OCR service; OCR loads lazily and returns `503` when model dependencies or
-weights are unavailable.
+## Cloning the Repository
 
-LightOnOCR-2 remains available for GPU or high-memory deployments with
-`OCR_ENGINE=lighton`; it requires approximately 2 GB of model weights and is
-not practical for this machine's CPU runtime.
-
-## Local model runtime
-
-The model branch includes the inference modules and Git LFS-managed weights:
-
-- `inference_pipeline.py` - end-to-end structured prediction and reasoning.
-- `backbone_bert/` - local BERT backbone and tokenizer.
-- `checkpoints_encoder_tuned/` - tuned encoder checkpoint.
-- `checkpoints_gen_final_tuned/` - tuned Qwen decoder checkpoint.
-
-Run a local prediction with:
-
-```bash
-HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
-python inference_pipeline.py \
-  --narrative "A worker fell from a ladder and fractured a wrist."
-```
-
-The model command requires the Python environment to provide `torch`,
-`transformers`, `pandas`, and the local checkpoint files. The API and database
-smoke checks can run without loading neural weights, but actual inference
-cannot run until those model dependencies are installed.
-
-Generated reasoning is structure-guided but not strictly factual; treat it as
-human-reviewed decision support.
-
-## Clone with model weights
+Because this repository contains large model files, ensure Git LFS is installed before cloning:
 
 ```bash
 git lfs install
