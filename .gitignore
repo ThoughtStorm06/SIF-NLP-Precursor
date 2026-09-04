@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.log
+backbone_bert/model.safetensors
+checkpoints_encoder_tuned/best_model.pt
+checkpoints_gen_final_tuned/best_gen_model/model.safetensors
