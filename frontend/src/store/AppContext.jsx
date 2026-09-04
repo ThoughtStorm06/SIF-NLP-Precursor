@@ -248,6 +248,7 @@ export const AppProvider = ({ children }) => {
     notification,
     showToast,
     refreshReports: fetchReports,
+    addReport: (report) => setReports(prev => [report, ...prev]),
     lastUpdated
   };
 

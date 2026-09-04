@@ -1,0 +1,26 @@
+# Vercel Ignore File
+# Prevents large ML models and backend files from being uploaded to Vercel
+
+# Environments and Modules
+.venv/
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+__pycache__/
+.pytest_cache/
+
+# ML Checkpoints (Causes 100MB limit error)
+checkpoints_encoder_tuned/
+checkpoints_gen_final_tuned/
+backbone_bert/
+
+# Databases & Data
+data/
+*.db
+*.sqlite3
+
+# Ignore the rest of the backend source code (optional, but saves upload time)
+backend/
+scripts/
+*.py
+uv.lock

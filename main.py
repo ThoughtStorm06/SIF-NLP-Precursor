@@ -832,11 +832,30 @@ async def upload_document(
         return await upload_pdf(file)
     if suffix in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"}:
         return await upload_image(file)
+    if suffix in {".txt", ".csv", ".docx"}:
+        return await upload_text(file)
     raise HTTPException(
         status_code=400,
-        detail="Supported uploads are ZIP, PDF, PNG, JPG, JPEG, WEBP, BMP, and TIFF.",
+        detail="Supported uploads are ZIP, PDF, PNG, JPG, JPEG, WEBP, BMP, TIFF, TXT, CSV, and DOCX.",
     )
 
+async def upload_text(file: UploadFile):
+    try:
+        content = await file.read()
+        text_content = content.decode("utf-8")
+        
+        return {
+            "message": "Text document uploaded and processed successfully.",
+            "filename": file.filename,
+            "ocr_result": text_content,
+            "id": f"CASE-TXT-{file.filename}",
+            "case_id": f"CASE-TXT-{file.filename}"
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process text file: {e}"
+        )
 
 @app.post("/api/v1/upload-pdf")
 async def upload_pdf(
