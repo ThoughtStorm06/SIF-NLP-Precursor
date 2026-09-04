@@ -1,9 +1,11 @@
 const API_BASE = '/api';
+const requestOptions = { credentials: 'include' };
 
 export const api = {
   // Python model service
   analyzeReport: async (content, fileType = 'txt') => {
     const res = await fetch(`${API_BASE}/v1/analyze`, {
+      ...requestOptions,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ file_type: fileType, content })
@@ -16,21 +18,21 @@ export const api = {
   // Reports
   getReports: async (params = {}) => {
     const query = new URLSearchParams(params).toString();
-    const res = await fetch(`${API_BASE}/reports?${query}`);
+    const res = await fetch(`${API_BASE}/reports?${query}`, requestOptions);
     if (!res.ok) throw new Error('Failed to fetch reports');
     const json = await res.json();
     return json.data;
   },
 
   getReportById: async (id) => {
-    const res = await fetch(`${API_BASE}/reports/${id}`);
+    const res = await fetch(`${API_BASE}/reports/${id}`, requestOptions);
     if (!res.ok) throw new Error(`Failed to fetch report ${id}`);
     const json = await res.json();
     return json.data;
   },
 
   getUploadedReport: async (id) => {
-    const res = await fetch(`${API_BASE}/v1/upload-report/${encodeURIComponent(id)}`);
+    const res = await fetch(`${API_BASE}/v1/upload-report/${encodeURIComponent(id)}`, requestOptions);
     const json = await res.json();
     if (!res.ok) throw new Error(json.detail || json.message || `Failed to fetch uploaded report ${id}`);
     return json;
@@ -38,6 +40,7 @@ export const api = {
 
   overrideReport: async (id, { newTier, reason, notes }, role = 'hse_officer') => {
     const res = await fetch(`${API_BASE}/reports/${id}/override`, {
+      ...requestOptions,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -54,6 +57,7 @@ export const api = {
 
   escalateReport: async (id, data, role = 'hse_officer') => {
     const res = await fetch(`${API_BASE}/reports/${id}/escalate`, {
+      ...requestOptions,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -70,6 +74,7 @@ export const api = {
 
   verifyReport: async (id, role = 'hse_officer') => {
     const res = await fetch(`${API_BASE}/reports/${id}/verify`, {
+      ...requestOptions,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -265,6 +270,7 @@ export const api = {
     formData.append('file', fileObj);
 
     const res = await fetch(`${API_BASE}/upload`, {
+      ...requestOptions,
       method: 'POST',
       headers: {
         'x-user-role': role
@@ -280,7 +286,7 @@ export const api = {
   },
 
   getUploadStatus: async (jobId) => {
-    const res = await fetch(`${API_BASE}/v1/upload/${encodeURIComponent(jobId)}`);
+    const res = await fetch(`${API_BASE}/v1/upload/${encodeURIComponent(jobId)}`, requestOptions);
     const json = await res.json();
     if (!res.ok) throw new Error(json.detail || json.message || 'Failed to read upload status');
     return json;
