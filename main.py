@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import BackgroundTasks, FastAPI, HTTPException, UploadFile, File
 
 from src.sif_nlp_precursor.services.file_converter import (
     convert_pdf_to_images,
@@ -27,9 +27,11 @@ from sif_nlp_precursor.database.models import (
     Incident,
     Prediction,
     PredictionFeedback,
+    UploadJob,
 )
 
 from sif_nlp_precursor.services.similarity import find_similar_reports
+from sif_nlp_precursor.services.sps import calculate_normalized_sps
 
 from sif_nlp_precursor.schemas.report import (
     DashboardResponse,
@@ -53,6 +55,129 @@ app = FastAPI(
     title="SIF-NLP-Precursor API",
     version="1.0.0",
 )
+
+
+def _update_upload_job(job_id: str, **changes):
+    db = SessionLocal()
+    try:
+        job = db.query(UploadJob).filter(UploadJob.id == job_id).first()
+        if job is None:
+            return
+        for key, value in changes.items():
+            setattr(job, key, value)
+        db.commit()
+    finally:
+        db.close()
+
+
+def _uploaded_report(job_id: str, text: str, filename: str, input_type: str):
+    db = SessionLocal()
+    try:
+        job = db.query(UploadJob).filter(UploadJob.id == job_id).first()
+        if job is None:
+            return
+        case_id = f"UPLOAD-{job_id[:12]}"
+        incident = Incident(
+            case_id=case_id,
+            narrative=text,
+            title=f"Uploaded report: {filename}",
+            input_type=input_type,
+            processing_type="upload",
+            created_by="Admin",
+        )
+        db.add(incident)
+        db.flush()
+        job.case_id = case_id
+        job.extracted_text = text
+        db.commit()
+    finally:
+        db.close()
+
+
+def _process_upload_job(job_id: str, file_path: str, filename: str, suffix: str):
+    input_type = suffix.lstrip(".")
+    try:
+        _update_upload_job(job_id, status="processing", stage="validating", progress=10, message="File validated")
+        if suffix == ".pdf":
+            _update_upload_job(job_id, stage="ocr", progress=25, message="Rendering PDF pages and running OCR")
+            result = ocr_pdf(file_path, Path("data/pdf_images") / Path(filename).stem)
+            text = result["text"]
+        elif suffix in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"}:
+            _update_upload_job(job_id, stage="ocr", progress=35, message="Running image OCR")
+            text = ocr_image(file_path)
+        elif suffix in {".txt", ".csv"}:
+            _update_upload_job(job_id, stage="extracting", progress=35, message="Extracting text")
+            text = Path(file_path).read_text(encoding="utf-8", errors="replace")
+        elif suffix == ".docx":
+            _update_upload_job(job_id, stage="extracting", progress=35, message="Extracting DOCX text")
+            from docx import Document
+            text = "\n".join(paragraph.text for paragraph in Document(file_path).paragraphs).strip()
+        else:
+            raise ValueError("This upload type is not supported by the single-file job processor.")
+
+        _update_upload_job(job_id, stage="ocr_complete", progress=65, message="Text extraction complete", extracted_text=text)
+        _uploaded_report(job_id, text, filename, input_type)
+        _update_upload_job(job_id, stage="classifying", progress=70, message="Calling NLP model", model_status="running")
+
+        # Classification is deliberately attempted after the upload/report is persisted.
+        from inference_pipeline import predict_full_record
+        bert_model, bert_tokenizer, gen_model, gen_tokenizer, device = _get_model_runtime()
+        predicted = predict_full_record(text, bert_model, bert_tokenizer, gen_model, gen_tokenizer, device)
+        db = SessionLocal()
+        try:
+            job = db.query(UploadJob).filter(UploadJob.id == job_id).first()
+            incident = db.query(Incident).filter(Incident.case_id == job.case_id).first()
+            raw = predicted["sps_breakdown"]
+            breakdown = SPSBreakdown(
+                energy_level_pts=raw.get("energy_level_pts", 0),
+                exposure_pts=raw.get("exposure_pts", raw.get("exposure_type_pts", 0)),
+                barrier_pts=raw.get("barrier_pts", raw.get("barrier_status_pts", 0)),
+                counterfactual_pts=raw.get("counterfactual_pts", 0),
+                raw_total=raw.get("raw_total", raw.get("raw_score", 0)),
+                max_possible=raw.get("max_possible", raw.get("max_raw_score", 16)),
+            )
+            nlp_result = NLPResult(
+                case_id=job.case_id,
+                narrative=text,
+                title=f"Uploaded report: {filename}",
+                energy_source=predicted["energy_source"],
+                energy_level=predicted["energy_level"],
+                exposure_type=predicted["exposure_type"],
+                barrier_status=predicted["barrier_status"],
+                life_saving_rule=predicted["life_saving_rule"],
+                counterfactual_could_be_fatal_or_permanent=predicted["counterfactual_could_be_fatal_or_permanent"],
+                counterfactual_reasoning=predicted["counterfactual_reasoning"],
+                evidence_phrase=predicted["evidence_phrase"],
+                recorded_severity={str(i + 1): value for i, value in enumerate(predicted["recorded_severity"])},
+                confidence=predicted["confidence"],
+                evidence_verified=predicted["evidence_verified"],
+                sps=predicted["sps"],
+                sps_breakdown=breakdown,
+            )
+            db.add(Prediction(
+                incident_id=incident.id,
+                energy_source=nlp_result.energy_source,
+                energy_level=nlp_result.energy_level,
+                exposure_type=nlp_result.exposure_type,
+                barrier_status=nlp_result.barrier_status,
+                life_saving_rule=nlp_result.life_saving_rule,
+                counterfactual_could_be_fatal_or_permanent=nlp_result.counterfactual_could_be_fatal_or_permanent,
+                counterfactual_reasoning=nlp_result.counterfactual_reasoning,
+                evidence_phrase=nlp_result.evidence_phrase,
+                recorded_severity=nlp_result.recorded_severity,
+                confidence=nlp_result.confidence,
+                evidence_verified=nlp_result.evidence_verified,
+                sps=nlp_result.sps,
+                normalized_sps=calculate_normalized_sps(breakdown),
+                sps_breakdown=breakdown.model_dump(),
+                model_version="upload-model",
+            ))
+            db.commit()
+        finally:
+            db.close()
+        _update_upload_job(job_id, status="complete", stage="complete", progress=100, message="Report stored and classified", model_status="predicted")
+    except Exception as exc:
+        _update_upload_job(job_id, status="failed", stage="failed", progress=100, message="Upload processing failed", model_status="failed", error=str(exc))
 
 
 _MODEL_RUNTIME = None
@@ -820,24 +945,94 @@ async def upload_zip(
 
 @app.post("/api/v1/upload")
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file was provided.")
 
     suffix = Path(file.filename).suffix.lower()
-    if suffix == ".zip":
-        return await upload_zip(file)
-    if suffix == ".pdf":
-        return await upload_pdf(file)
-    if suffix in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"}:
-        return await upload_image(file)
-    if suffix in {".txt", ".csv", ".docx"}:
-        return await upload_text(file)
-    raise HTTPException(
-        status_code=400,
-        detail="Supported uploads are ZIP, PDF, PNG, JPG, JPEG, WEBP, BMP, TIFF, TXT, CSV, and DOCX.",
-    )
+    supported = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".txt", ".csv", ".docx"}
+    if suffix not in supported:
+        raise HTTPException(status_code=400, detail="Supported uploads are PDF, images, TXT, and CSV.")
+
+    import uuid
+    job_id = uuid.uuid4().hex
+    safe_filename = Path(file.filename).name
+    upload_dir = Path("data/uploads")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    stored_path = upload_dir / f"{job_id}_{safe_filename}"
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    stored_path.write_bytes(data)
+    db = SessionLocal()
+    try:
+        db.add(UploadJob(
+            id=job_id,
+            filename=safe_filename,
+            input_type=suffix.lstrip("."),
+            stored_path=str(stored_path),
+            message="Upload stored; queued for processing",
+        ))
+        db.commit()
+    finally:
+        db.close()
+    background_tasks.add_task(_process_upload_job, job_id, str(stored_path), safe_filename, suffix)
+    return {
+        "job_id": job_id,
+        "filename": safe_filename,
+        "status": "queued",
+        "stage": "queued",
+        "progress": 0,
+        "model_status": "not_called",
+        "message": "Upload stored and processing queued.",
+    }
+
+
+@app.get("/api/v1/upload/{job_id}")
+def upload_status(job_id: str):
+    db = SessionLocal()
+    try:
+        job = db.query(UploadJob).filter(UploadJob.id == job_id).first()
+        if job is None:
+            raise HTTPException(status_code=404, detail="Upload job not found.")
+        report = None
+        if job.case_id:
+            incident = db.query(Incident).filter(Incident.case_id == job.case_id).first()
+            prediction = incident.predictions[0] if incident and incident.predictions else None
+            if incident:
+                report = {
+                    "id": incident.case_id,
+                    "title": incident.title,
+                    "narrative": incident.narrative,
+                    "status": "Pending Triage" if prediction else "Processing",
+                    "input_type": incident.input_type,
+                    "sps": prediction.sps if prediction else None,
+                    "sps_tier": "Critical" if prediction and prediction.sps >= 75 else "High" if prediction and prediction.sps >= 60 else "Medium" if prediction else "Pending",
+                    "confidence": prediction.confidence if prediction else None,
+                    "energy_source": prediction.energy_source if prediction else "Pending model classification",
+                    "energy_level": prediction.energy_level if prediction else "Pending",
+                    "exposure_type": prediction.exposure_type if prediction else "Pending",
+                    "barrier_status": prediction.barrier_status if prediction else "Pending",
+                    "life_saving_rule": prediction.life_saving_rule if prediction else "Pending",
+                    "recorded_severity": prediction.recorded_severity if prediction else "Pending",
+                    "evidence_spans": [{"text": prediction.evidence_phrase, "verified": prediction.evidence_verified}] if prediction else [],
+                }
+        return {
+            "job_id": job.id,
+            "filename": job.filename,
+            "status": job.status,
+            "stage": job.stage,
+            "progress": job.progress,
+            "message": job.message,
+            "case_id": job.case_id,
+            "model_status": job.model_status,
+            "error": job.error,
+            "report": report,
+        }
+    finally:
+        db.close()
 
 async def upload_text(file: UploadFile):
     try:

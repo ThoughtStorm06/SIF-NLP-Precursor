@@ -7,7 +7,7 @@ const ACCEPTED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.tiff', '.bmp', '
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
 
 export const DataUpload = () => {
-  const { addReport, openReport, role } = useApp();
+  const { addReport, openReport, role, refreshReports } = useApp();
   const fileInputRef = useRef(null);
   const [files, setFiles] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -15,7 +15,7 @@ export const DataUpload = () => {
   // Stats for the batch summary panel
   const totalFiles = files.length;
   const completedCount = files.filter(f => f.status === 'Complete').length;
-  const processingCount = files.filter(f => ['Queued', 'Validating', 'Extracting/OCR', 'Classifying'].includes(f.status)).length;
+  const processingCount = files.filter(f => !['Complete', 'Rejected'].includes(f.status)).length;
   const rejectedCount = files.filter(f => f.status === 'Rejected').length;
 
   const validateFile = (file) => {
@@ -30,31 +30,33 @@ export const DataUpload = () => {
   };
 
   const processFilePipeline = async (fileId, fileObj) => {
-    const updateFileStatus = (status, error = null, reportId = null) => {
-      setFiles(prev => prev.map(f => f.id === fileId ? { ...f, status, error, reportId } : f));
+    const updateFile = (changes) => {
+      setFiles(prev => prev.map(f => f.id === fileId ? { ...f, ...changes } : f));
     };
 
-    // 1. Validating
-    updateFileStatus('Validating');
-
     try {
-      // Start API call
-      const uploadPromise = api.uploadFile(fileObj, role);
-      
-      // Simulate UI transitions for the prototype
-      setTimeout(() => {
-        setFiles(prev => prev.map(f => f.id === fileId && !['Complete', 'Rejected'].includes(f.status) ? { ...f, status: 'Extracting/OCR' } : f));
-      }, 600);
-      setTimeout(() => {
-        setFiles(prev => prev.map(f => f.id === fileId && !['Complete', 'Rejected'].includes(f.status) ? { ...f, status: 'Classifying' } : f));
-      }, 1500);
-
-      const newReport = await uploadPromise;
-      
-      updateFileStatus('Complete', null, newReport.id);
-      addReport(newReport); // Inject into global context
+      updateFile({ status: 'Validating', progress: 5 });
+      const queued = await api.uploadFile(fileObj, role);
+      updateFile({ status: 'Queued', progress: queued.progress || 0, jobId: queued.job_id });
+      let result = queued;
+      while (!['complete', 'failed'].includes(result.status)) {
+        await new Promise(resolve => setTimeout(resolve, 700));
+        result = await api.getUploadStatus(queued.job_id);
+        updateFile({
+          status: result.status === 'processing' ? result.stage : result.status === 'complete' ? 'Complete' : 'Rejected',
+          progress: result.progress,
+          backendMessage: result.message,
+          modelStatus: result.model_status,
+          reportId: result.case_id,
+          error: result.error
+        });
+      }
+      if (result.status === 'failed') throw new Error(result.error || result.message);
+      if (result.report) addReport(result.report);
+      updateFile({ status: 'Complete', progress: 100, reportId: result.case_id });
+      await refreshReports();
     } catch (err) {
-      updateFileStatus('Rejected', 'Processing failed: ' + err.message);
+      updateFile({ status: 'Rejected', progress: 100, error: 'Processing failed: ' + err.message });
     }
   };
 
@@ -193,6 +195,12 @@ export const DataUpload = () => {
                 {file.name}
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{file.size}</div>
+                <div style={{ height: '5px', background: 'var(--border-subtle)', borderRadius: '4px', marginTop: '8px', overflow: 'hidden' }}>
+                  <div style={{ width: `${file.progress || 0}%`, height: '100%', background: file.status === 'Rejected' ? '#ef4444' : file.status === 'Complete' ? '#22c55e' : '#3b82f6', transition: 'width 0.3s ease' }} />
+                </div>
+                {file.backendMessage && file.status !== 'Complete' && (
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>{file.backendMessage}</div>
+                )}
               
               {file.status === 'Rejected' && (
                 <div style={{ fontSize: '0.8rem', color: '#ef4444', marginTop: '4px' }}>

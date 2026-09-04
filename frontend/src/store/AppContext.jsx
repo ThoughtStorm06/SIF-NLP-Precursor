@@ -4,10 +4,13 @@ import { api } from '../services/api.js';
 const AppContext = createContext(null);
 
 export const AppProvider = ({ children }) => {
-  const [theme, setTheme] = useState('oceanic');
-  const [mode, setMode] = useState('light');
-  const [role, setRole] = useState('hse_officer');
-  const [currentView, setCurrentView] = useState('triage'); // Default for HSE Officer is Triage
+  const readSession = (key, fallback) => {
+    try { return window.localStorage.getItem(key) || fallback; } catch { return fallback; }
+  };
+  const [theme, setTheme] = useState(() => readSession('sif.theme', 'oceanic'));
+  const [mode, setMode] = useState(() => readSession('sif.mode', 'light'));
+  const [role, setRole] = useState(() => readSession('sif.role', 'hse_officer'));
+  const [currentView, setCurrentView] = useState(() => readSession('sif.view', 'triage'));
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -37,7 +40,15 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     document.documentElement.setAttribute('data-mode', mode);
-  }, [theme, mode]);
+    try {
+      window.localStorage.setItem('sif.theme', theme);
+      window.localStorage.setItem('sif.mode', mode);
+      window.localStorage.setItem('sif.role', role);
+      window.localStorage.setItem('sif.view', currentView);
+    } catch {
+      // Session persistence is best effort when storage is unavailable.
+    }
+  }, [theme, mode, role, currentView]);
 
   // Pagination state
   const [page, setPage] = useState(1);

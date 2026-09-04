@@ -307,3 +307,22 @@ class IncidentCluster(Base):
     cluster: Mapped["Cluster"] = relationship(
         back_populates="incident_clusters",
     )
+
+
+class UploadJob(Base):
+    __tablename__ = "upload_jobs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    input_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="queued")
+    stage: Mapped[str] = mapped_column(String(40), nullable=False, default="queued")
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    message: Mapped[str] = mapped_column(Text, nullable=False, default="Queued")
+    stored_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    case_id: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    model_status: Mapped[str] = mapped_column(String(30), nullable=False, default="not_called")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

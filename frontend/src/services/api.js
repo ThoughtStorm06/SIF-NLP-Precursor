@@ -270,5 +270,12 @@ export const api = {
       throw new Error(json.message || 'Upload failed');
     }
     return json.data ?? json;
+  },
+
+  getUploadStatus: async (jobId) => {
+    const res = await fetch(`${API_BASE}/v1/upload/${encodeURIComponent(jobId)}`);
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.detail || json.message || 'Failed to read upload status');
+    return json;
   }
 };
