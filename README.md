@@ -22,6 +22,9 @@ dataset, run:
 
 ```bash
 npm run seed:sample
+
+# Populate the Python SQLite store from the generated seed records
+npm run seed:sqlite
 ```
 
 The Python SQLite sample database has been populated with the first five rows

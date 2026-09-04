@@ -19,6 +19,7 @@
     "dev:python": "python -m uvicorn main:app --reload --port 8000",
     "dev:all": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\" \"npm run dev:python\"",
     "seed:sample": "node scripts/convert_csv.js --limit 5",
+    "seed:sqlite": ".venv\\Scripts\\python.exe scripts/seed_sqlite.py",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

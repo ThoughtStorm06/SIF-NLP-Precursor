@@ -1,17 +1,31 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File 
-from sif_nlp_precursor.services.zip_decoder import extract_zip
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, UploadFile, File
+
+from src.sif_nlp_precursor.services.file_converter import (
+    convert_pdf_to_images,
+)
+
+from src.sif_nlp_precursor.services.zip_decoder import extract_zip
+
+from src.sif_nlp_precursor.services.batch_processor import (
+    process_extracted_files,
+)
 
 from sif_nlp_precursor.database.connection import SessionLocal
 from sif_nlp_precursor.database.crud import (
     create_incident_and_prediction,
     create_prediction_feedback,
 )
+
 from sif_nlp_precursor.database.models import (
     Incident,
     Prediction,
     PredictionFeedback,
 )
+
 from sif_nlp_precursor.services.similarity import find_similar_reports
+
 from sif_nlp_precursor.schemas.report import (
     DashboardResponse,
     FeedbackInput,
@@ -23,7 +37,11 @@ from sif_nlp_precursor.schemas.report import (
     SimilarReportsResponse,
     TaxonomyResponse,
 )
-from sif_nlp_precursor.schemas.nlp_result import NLPResult, SPSBreakdown
+
+from sif_nlp_precursor.schemas.nlp_result import (
+    NLPResult,
+    SPSBreakdown,
+)
 
 
 app = FastAPI(
@@ -31,11 +49,13 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
 _MODEL_RUNTIME = None
 
 
 def _get_model_runtime():
     global _MODEL_RUNTIME
+
     if _MODEL_RUNTIME is not None:
         return _MODEL_RUNTIME
 
@@ -43,30 +63,50 @@ def _get_model_runtime():
         from inference_pipeline import load_bert_model
         import config as model_config
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers import (
+            AutoModelForCausalLM,
+            AutoTokenizer,
+        )
+
     except ImportError as exc:
         raise HTTPException(
             status_code=503,
             detail=(
-                "Model dependencies are unavailable. Install torch, transformers, "
-                f"and pandas before calling analyze: {exc}"
+                "Model dependencies are unavailable. "
+                "Install torch, transformers, and pandas "
+                f"before calling analyze: {exc}"
             ),
         ) from exc
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    bert_model, bert_tokenizer = load_bert_model(
-        f"{model_config.OUTPUT_DIR}/best_model.pt", device
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu"
     )
+
+    bert_model, bert_tokenizer = load_bert_model(
+        f"{model_config.OUTPUT_DIR}/best_model.pt",
+        device,
+    )
+
     gen_tokenizer = AutoTokenizer.from_pretrained(
         f"{model_config.GEN_OUTPUT_DIR}/best_gen_model",
         local_files_only=True,
     )
+
     gen_model = AutoModelForCausalLM.from_pretrained(
         f"{model_config.GEN_OUTPUT_DIR}/best_gen_model",
         local_files_only=True,
     ).to(device)
+
     gen_model.eval()
-    _MODEL_RUNTIME = (bert_model, bert_tokenizer, gen_model, gen_tokenizer, device)
+
+    _MODEL_RUNTIME = (
+        bert_model,
+        bert_tokenizer,
+        gen_model,
+        gen_tokenizer,
+        device,
+    )
+
     return _MODEL_RUNTIME
 
 
@@ -87,7 +127,15 @@ def analyze_report(report: ReportInput):
 
     try:
         from inference_pipeline import predict_full_record
-        bert_model, bert_tokenizer, gen_model, gen_tokenizer, device = _get_model_runtime()
+
+        (
+            bert_model,
+            bert_tokenizer,
+            gen_model,
+            gen_tokenizer,
+            device,
+        ) = _get_model_runtime()
+
         predicted = predict_full_record(
             report.content,
             bert_model,
@@ -110,19 +158,48 @@ def analyze_report(report: ReportInput):
             next_id = last_incident.id + 1
 
         case_id = f"CASE-{next_id:07d}"
+
         raw_breakdown = predicted["sps_breakdown"]
+
         breakdown = SPSBreakdown(
-            energy_level_pts=raw_breakdown.get("energy_level_pts", 0),
+            energy_level_pts=raw_breakdown.get(
+                "energy_level_pts",
+                0,
+            ),
             exposure_pts=raw_breakdown.get(
-                "exposure_pts", raw_breakdown.get("exposure_type_pts", 0)
+                "exposure_pts",
+                raw_breakdown.get(
+                    "exposure_type_pts",
+                    0,
+                ),
             ),
             barrier_pts=raw_breakdown.get(
-                "barrier_pts", raw_breakdown.get("barrier_status_pts", 0)
+                "barrier_pts",
+                raw_breakdown.get(
+                    "barrier_status_pts",
+                    0,
+                ),
             ),
-            counterfactual_pts=raw_breakdown.get("counterfactual_pts", 0),
-            raw_total=raw_breakdown.get("raw_total", raw_breakdown.get("raw_score", 0)),
-            max_possible=raw_breakdown.get("max_possible", raw_breakdown.get("max_raw_score", 16)),
+            counterfactual_pts=raw_breakdown.get(
+                "counterfactual_pts",
+                0,
+            ),
+            raw_total=raw_breakdown.get(
+                "raw_total",
+                raw_breakdown.get(
+                    "raw_score",
+                    0,
+                ),
+            ),
+            max_possible=raw_breakdown.get(
+                "max_possible",
+                raw_breakdown.get(
+                    "max_raw_score",
+                    16,
+                ),
+            ),
         )
+
         nlp_result = NLPResult(
             case_id=case_id,
             narrative=report.content,
@@ -135,44 +212,68 @@ def analyze_report(report: ReportInput):
             counterfactual_could_be_fatal_or_permanent=predicted[
                 "counterfactual_could_be_fatal_or_permanent"
             ],
-            counterfactual_reasoning=predicted["counterfactual_reasoning"],
+            counterfactual_reasoning=predicted[
+                "counterfactual_reasoning"
+            ],
             evidence_phrase=predicted["evidence_phrase"],
             recorded_severity={
                 str(index + 1): label
-                for index, label in enumerate(predicted["recorded_severity"])
+                for index, label in enumerate(
+                    predicted["recorded_severity"]
+                )
             },
             confidence=predicted["confidence"],
-            evidence_verified=predicted["evidence_verified"],
+            evidence_verified=predicted[
+                "evidence_verified"
+            ],
             sps=predicted["sps"],
             sps_breakdown=breakdown,
         )
-        incident, prediction = create_incident_and_prediction(
-            db=db,
-            case_id=case_id,
-            narrative=report.content,
-            input_type=report.file_type,
-            processing_type="individual",
-            created_by="user",
-            nlp_result=nlp_result,
+
+        incident, prediction = (
+            create_incident_and_prediction(
+                db=db,
+                case_id=case_id,
+                narrative=report.content,
+                input_type=report.file_type,
+                processing_type="individual",
+                created_by="user",
+                nlp_result=nlp_result,
+            )
         )
 
         return ReportReceivedResponse(
             case_id=incident.case_id,
             file_type=report.file_type,
-            message="Safety report analyzed and stored successfully.",
+            message=(
+                "Safety report analyzed and "
+                "stored successfully."
+            ),
             prediction={
                 "energy_source": prediction.energy_source,
                 "energy_level": prediction.energy_level,
                 "exposure_type": prediction.exposure_type,
                 "barrier_status": prediction.barrier_status,
-                "life_saving_rule": prediction.life_saving_rule,
-                "recorded_severity": prediction.recorded_severity,
+                "life_saving_rule": (
+                    prediction.life_saving_rule
+                ),
+                "recorded_severity": (
+                    prediction.recorded_severity
+                ),
                 "confidence": prediction.confidence,
-                "evidence_phrase": prediction.evidence_phrase,
+                "evidence_phrase": (
+                    prediction.evidence_phrase
+                ),
                 "sps": prediction.sps,
-                "sps_breakdown": prediction.sps_breakdown,
-                "counterfactual_reasoning": prediction.counterfactual_reasoning,
-                "model_version": prediction.model_version,
+                "sps_breakdown": (
+                    prediction.sps_breakdown
+                ),
+                "counterfactual_reasoning": (
+                    prediction.counterfactual_reasoning
+                ),
+                "model_version": (
+                    prediction.model_version
+                ),
             },
             model_status="predicted",
         )
@@ -180,11 +281,14 @@ def analyze_report(report: ReportInput):
     except HTTPException:
         db.rollback()
         raise
+
     except Exception as e:
         db.rollback()
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to store safety report: {e}",
+            detail=(
+                f"Failed to store safety report: {e}"
+            ),
         ) from e
 
     finally:
@@ -214,9 +318,13 @@ def get_report_history():
                     title=incident.title,
                     narrative=incident.narrative,
                     input_type=incident.input_type,
-                    processing_type=incident.processing_type,
+                    processing_type=(
+                        incident.processing_type
+                    ),
                     created_by=incident.created_by,
-                    created_at=incident.created_at.isoformat(),
+                    created_at=(
+                        incident.created_at.isoformat()
+                    ),
                 )
             )
 
@@ -225,7 +333,9 @@ def get_report_history():
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to retrieve report history: {e}",
+            detail=(
+                f"Failed to retrieve report history: {e}"
+            ),
         ) from e
 
     finally:
@@ -260,32 +370,58 @@ def get_report_details(case_id: str):
             "title": incident.title,
             "narrative": incident.narrative,
             "input_type": incident.input_type,
-            "processing_type": incident.processing_type,
+            "processing_type": (
+                incident.processing_type
+            ),
             "created_by": incident.created_by,
             "created_at": incident.created_at.isoformat(),
             "prediction": (
                 {
-                    "energy_source": prediction.energy_source,
-                    "energy_level": prediction.energy_level,
-                    "exposure_type": prediction.exposure_type,
-                    "barrier_status": prediction.barrier_status,
+                    "energy_source": (
+                        prediction.energy_source
+                    ),
+                    "energy_level": (
+                        prediction.energy_level
+                    ),
+                    "exposure_type": (
+                        prediction.exposure_type
+                    ),
+                    "barrier_status": (
+                        prediction.barrier_status
+                    ),
                     "life_saving_rule": (
                         prediction.life_saving_rule
                     ),
                     "counterfactual_could_be_fatal_or_permanent": (
-                        prediction.counterfactual_could_be_fatal_or_permanent
+                        prediction
+                        .counterfactual_could_be_fatal_or_permanent
                     ),
                     "counterfactual_reasoning": (
-                        prediction.counterfactual_reasoning
+                        prediction
+                        .counterfactual_reasoning
                     ),
-                    "evidence_phrase": prediction.evidence_phrase,
-                    "recorded_severity": prediction.recorded_severity,
-                    "confidence": prediction.confidence,
-                    "evidence_verified": prediction.evidence_verified,
+                    "evidence_phrase": (
+                        prediction.evidence_phrase
+                    ),
+                    "recorded_severity": (
+                        prediction.recorded_severity
+                    ),
+                    "confidence": (
+                        prediction.confidence
+                    ),
+                    "evidence_verified": (
+                        prediction.evidence_verified
+                    ),
                     "sps": prediction.sps,
-                    "normalized_sps": prediction.normalized_sps,
-                    "sps_breakdown": prediction.sps_breakdown,
-                    "model_version": prediction.model_version,
+                    "normalized_sps": (
+                        prediction.normalized_sps
+                    ),
+                    "sps_breakdown": (
+                        prediction.sps_breakdown
+                    ),
+                    "model_version": (
+                        prediction.model_version
+                    ),
                 }
                 if prediction
                 else None
@@ -298,7 +434,9 @@ def get_report_details(case_id: str):
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to retrieve report details: {e}",
+            detail=(
+                f"Failed to retrieve report details: {e}"
+            ),
         ) from e
 
     finally:
@@ -330,7 +468,9 @@ def submit_feedback(
 
         prediction = (
             db.query(Prediction)
-            .filter(Prediction.incident_id == incident.id)
+            .filter(
+                Prediction.incident_id == incident.id
+            )
             .order_by(Prediction.id.desc())
             .first()
         )
@@ -338,7 +478,10 @@ def submit_feedback(
         if prediction is None:
             raise HTTPException(
                 status_code=404,
-                detail="No NLP prediction found for this report.",
+                detail=(
+                    "No NLP prediction found "
+                    "for this report."
+                ),
             )
 
         saved_feedback = create_prediction_feedback(
@@ -370,7 +513,9 @@ def submit_feedback(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to submit feedback: {e}",
+            detail=(
+                f"Failed to submit feedback: {e}"
+            ),
         ) from e
 
     finally:
@@ -385,13 +530,19 @@ def populate_dashboard():
     db = SessionLocal()
 
     try:
-        total_reports = db.query(Incident).count()
+        total_reports = (
+            db.query(Incident).count()
+        )
 
-        total_predictions = db.query(Prediction).count()
+        total_predictions = (
+            db.query(Prediction).count()
+        )
 
         high_risk_reports = (
             db.query(Prediction)
-            .filter(Prediction.normalized_sps > 0.66)
+            .filter(
+                Prediction.normalized_sps > 0.66
+            )
             .count()
         )
 
@@ -406,19 +557,25 @@ def populate_dashboard():
 
         low_risk_reports = (
             db.query(Prediction)
-            .filter(Prediction.normalized_sps <= 0.33)
+            .filter(
+                Prediction.normalized_sps <= 0.33
+            )
             .count()
         )
 
         correct_predictions = (
             db.query(PredictionFeedback)
-            .filter(PredictionFeedback.status == "correct")
+            .filter(
+                PredictionFeedback.status == "correct"
+            )
             .count()
         )
 
         incorrect_predictions = (
             db.query(PredictionFeedback)
-            .filter(PredictionFeedback.status == "incorrect")
+            .filter(
+                PredictionFeedback.status == "incorrect"
+            )
             .count()
         )
 
@@ -435,7 +592,9 @@ def populate_dashboard():
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to populate dashboard: {e}",
+            detail=(
+                f"Failed to populate dashboard: {e}"
+            ),
         ) from e
 
     finally:
@@ -484,11 +643,14 @@ def get_similar_reports(case_id: str):
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to find similar reports: {e}",
+            detail=(
+                f"Failed to find similar reports: {e}"
+            ),
         ) from e
 
     finally:
         db.close()
+
 
 @app.get(
     "/api/v1/categories/taxonomy",
@@ -513,8 +675,11 @@ def get_taxonomy():
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to retrieve taxonomy: {e}",
+            detail=(
+                f"Failed to retrieve taxonomy: {e}"
+            ),
         ) from e
+
 
 @app.get(
     "/api/v1/model/model-info",
@@ -526,16 +691,25 @@ def get_model_info():
             model_name="SIF-NLP-Precursor",
             model_version="not_connected",
             status="not_loaded",
-            task="Serious Injury & Fatality precursor detection",
+            task=(
+                "Serious Injury & Fatality "
+                "precursor detection"
+            ),
         )
 
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to retrieve model information: {e}",
+            detail=(
+                f"Failed to retrieve model information: {e}"
+            ),
         ) from e
+
+
 @app.post("/api/v1/upload-zip")
-async def upload_zip(file: UploadFile = File(...)):
+async def upload_zip(
+    file: UploadFile = File(...),
+):
     try:
         if not file.filename:
             raise HTTPException(
@@ -550,12 +724,15 @@ async def upload_zip(file: UploadFile = File(...)):
             )
 
         upload_dir = "data/uploads"
-        zip_path = f"{upload_dir}/{file.filename}"
         extract_dir = "data/extracted_reports"
+        converted_dir = "data/batch_converted"
 
         import os
 
-        os.makedirs(upload_dir, exist_ok=True)
+        os.makedirs(
+            upload_dir,
+            exist_ok=True,
+        )
 
         file_data = await file.read()
 
@@ -565,22 +742,41 @@ async def upload_zip(file: UploadFile = File(...)):
                 detail="Uploaded ZIP file is empty.",
             )
 
-        with open(zip_path, "wb") as output_file:
+        zip_path = os.path.join(
+            upload_dir,
+            file.filename,
+        )
+
+        with open(
+            zip_path,
+            "wb",
+        ) as output_file:
             output_file.write(file_data)
 
+        # Extract files from ZIP
         extracted_files = extract_zip(
             zip_path=zip_path,
             output_dir=extract_dir,
         )
 
+        # Process every extracted file
+        processing_results = process_extracted_files(
+            extracted_files=extracted_files,
+            output_dir=converted_dir,
+        )
+
         return {
-            "message": "ZIP uploaded and extracted successfully.",
+            "message": (
+                "ZIP uploaded and batch "
+                "processed successfully."
+            ),
             "filename": file.filename,
-            "files_extracted": len(extracted_files),
-            "files": [
-                str(path)
-                for path in extracted_files
-            ],
+            "files_extracted": len(
+                extracted_files
+            ),
+            "processing_results": (
+                processing_results
+            ),
         }
 
     except HTTPException:
@@ -595,5 +791,107 @@ async def upload_zip(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to process ZIP file: {e}",
+            detail=(
+                f"Failed to process ZIP batch: {e}"
+            ),
+        ) from e
+
+
+@app.post("/api/v1/upload-pdf")
+async def upload_pdf(
+    file: UploadFile = File(...),
+):
+    try:
+        if not file.filename:
+            raise HTTPException(
+                status_code=400,
+                detail="No file was provided.",
+            )
+
+        if not file.filename.lower().endswith(".pdf"):
+            raise HTTPException(
+                status_code=400,
+                detail="Only PDF files are accepted.",
+            )
+
+        upload_dir = "data/pdf_uploads"
+        output_dir = "data/pdf_images"
+
+        import os
+
+        os.makedirs(
+            upload_dir,
+            exist_ok=True,
+        )
+
+        os.makedirs(
+            output_dir,
+            exist_ok=True,
+        )
+
+        pdf_path = os.path.join(
+            upload_dir,
+            file.filename,
+        )
+
+        file_data = await file.read()
+
+        if not file_data:
+            raise HTTPException(
+                status_code=400,
+                detail="Uploaded PDF file is empty.",
+            )
+
+        with open(
+            pdf_path,
+            "wb",
+        ) as output_file:
+            output_file.write(file_data)
+
+        image_dir = os.path.join(
+            output_dir,
+            Path(file.filename).stem,
+        )
+
+        image_paths = convert_pdf_to_images(
+            pdf_path=pdf_path,
+            output_dir=image_dir,
+        )
+
+        return {
+            "message": (
+                "PDF uploaded and converted "
+                "successfully."
+            ),
+            "filename": file.filename,
+            "pages_converted": len(
+                image_paths
+            ),
+            "images": [
+                str(path)
+                for path in image_paths
+            ],
+        }
+
+    except HTTPException:
+        raise
+
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=str(e),
+        ) from e
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        ) from e
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to process PDF: {e}"
+            ),
         ) from e
