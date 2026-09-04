@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="oceanic" data-mode="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIF-Sentinel | AI/NLP Engine for SIF Precursor Detection (Oil India Limited)</title>
+  <meta name="description" content="AI/NLP Precursor Intelligence Engine detecting Serious Injury & Fatality (SIF) precursors in Oil India Limited's Unsafe Act, Unsafe Condition, and Near-Miss reports." />
+  
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+</head>
+<body>
+
+  <div class="app-container">
+
+    <!-- PERSISTENT LEFT NAVIGATION RAIL -->
+    <aside class="app-sidebar">
+      <div class="sidebar-header">
+        <div class="brand-badge">OIL</div>
+        <div class="brand-text">
+          <h1>SIF-SENTINEL</h1>
+          <span>Precursor Engine</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section-title">Core Modules</div>
+        
+        <button class="nav-item active" data-view="dashboard" id="nav-dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <span>1.0 Executive Pulse</span>
+        </button>
+
+        <button class="nav-item" data-view="triage" id="nav-triage">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span>2.0 Triage Worklist</span>
+          <span class="badge" id="sidebar-urgent-count">3</span>
+        </button>
+
+        <button class="nav-item" data-view="analytics" id="nav-analytics">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          <span>4.0 Leading BI & Heatmaps</span>
+        </button>
+
+        <button class="nav-item" data-view="capa" id="nav-capa">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span>5.0 CAPA Escalations</span>
+        </button>
+
+        <div class="nav-section-title">Operations & Admin</div>
+
+        <button class="nav-item" data-view="admin" id="nav-admin">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>6.0 MLOps & Admin</span>
+        </button>
+
+        <button class="nav-item" data-view="notifications" id="nav-notifications">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span>7.0 Statutory Alerts</span>
+        </button>
+
+        <button class="nav-item" data-view="help" id="nav-help">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span>8.0 Safety Charter & Help</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="system-status">
+          <div class="status-pulse"></div>
+          <span>Inference Engine: Live</span>
+        </div>
+        <div style="font-size:10.5px; color:var(--text-muted);">
+          OIL PSU Sovereign Node • OISD-154
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN INTERACTIVE APP CONTAINER -->
+    <main class="app-main">
+
+      <!-- TOPBAR -->
+      <header class="app-topbar">
+        <div class="topbar-left">
+          <div class="search-omnibox">
+            <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="omnibox-search" placeholder="Search safety reports, assets, keywords (e.g., 'crane', 'GGS-02', 'LOTO')..." />
+            <span class="search-shortcut">Ctrl+K</span>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <!-- DUAL THEME SELECTOR: Oceanic vs Warm Sunset/Terra -->
+          <div class="theme-selector" title="Switch Theme Gradient Palette">
+            <button class="theme-pill active" id="theme-oceanic-btn" title="Executive Oceanic: Vibrant Blue, Teal, Slate">
+              <span class="theme-color-dot dot-oceanic"></span>
+              <span>Oceanic</span>
+            </button>
+            <button class="theme-pill" id="theme-terra-btn" title="Warm Sunset / Terra: Warm Orange, Rose Accent, Peach, Stone">
+              <span class="theme-color-dot dot-terra"></span>
+              <span>Warm Terra</span>
+            </button>
+          </div>
+
+          <!-- DARK / LIGHT MODE TOGGLE -->
+          <button class="mode-toggle" id="mode-toggle-btn" title="Toggle Dark / Sunlight Mode">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+
+          <!-- ROLE / PERSONA SELECTOR -->
+          <div class="user-persona-select" title="Switch Operational Persona">
+            <div class="user-avatar" id="current-user-avatar">PS</div>
+            <div class="user-info">
+              <div class="user-name" id="current-user-name">Priya Sharma</div>
+              <div class="user-role" id="current-user-role">Field HSE Officer (Assam)</div>
+            </div>
+            <select id="persona-select" style="opacity:0; position:absolute; width:100%; height:100%; cursor:pointer; left:0; top:0;">
+              <option value="priya">Priya Sharma (Field HSE Officer)</option>
+              <option value="rakesh">Er. Rakesh Borah (Asset / Installation Manager)</option>
+              <option value="iyer">Dr. S. Iyer (Head of Process Safety)</option>
+              <option value="admin">Ananya Mitra (MLOps & Governance Admin)</option>
+            </select>
+          </div>
+        </div>
+      </header>
+
+      <!-- REAL-TIME STATUTORY SLA ALERT BANNER -->
+      <div class="sla-alert-banner" id="sla-alert-banner">
+        <div class="sla-content">
+          <div class="sla-pulse-badge">
+            <span style="display:inline-block; width:6px; height:6px; background:#fff; border-radius:50%;"></span>
+            STATUTORY SLA BREACH RISK
+          </div>
+          <span><strong>Action Required:</strong> 2 Critical SIF Precursors pending review past 2-hour window. Top incident: <strong>UAR-2026-0841 (Rig-04 Dibrugarh)</strong> has 1.8h remaining before mandatory executive escalation.</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button class="sla-btn" id="btn-triage-sla-action">Triage Now →</button>
+          <button class="sla-close" id="btn-close-sla" title="Dismiss Alert">✕</button>
+        </div>
+      </div>
+
+      <!-- VIEWPORT RENDER AREA -->
+      <div class="app-viewport" id="app-viewport">
+        <!-- Content dynamically injected by app.js -->
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- SPLIT SCREEN / REPORT DETAIL DRAWER -->
+  <div class="drawer-backdrop" id="drawer-backdrop"></div>
+  <aside class="detail-drawer" id="detail-drawer">
+    <!-- Populated dynamically via window.openReportDrawer -->
+  </aside>
+
+  <!-- REUSABLE MODAL DIALOG -->
+  <div class="modal-backdrop" id="modal-backdrop">
+    <!-- Populated dynamically for CAPA escalation or Override -->
+  </div>
+
+  <!-- SCRIPTS -->
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
