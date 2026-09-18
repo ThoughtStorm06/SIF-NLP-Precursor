@@ -10,16 +10,24 @@ The project employs a microservices-style architecture to separate the presentat
 
 ```mermaid
 graph TD
-    Client([Client Browser]) -->|HTTP/HTTPS| Frontend[React Vite Frontend]
-    Frontend -->|API Requests| NodeAPI[Node.js Express Backend]
-    
-    NodeAPI -.->|Proxies /api/v1/*| PythonAPI[Python FastAPI Backend]
-    NodeAPI -->|Handles Analytics, CAPA, Models| NodeAPI
-    
-    PythonAPI -->|Inference| BERT[Tuned BERT Encoder]
-    PythonAPI -->|Inference| Qwen[Tuned Qwen Decoder]
-    PythonAPI -->|Read/Write| SQLite[(SQLite Database)]
-    PythonAPI -->|Document Processing| OCR[RapidOCR Engine]
+    Input([Report Input]) -->|Text / PDF / Image / ZIP| OCR[RapidOCR + PyMuPDF]
+
+    OCR -->|Narrative Text| BERT[Tuned BERT<br/>Multi-Head Encoder]
+
+    BERT -->|Safety Fields| Fields[Structured Fields<br/>Energy • Exposure • Barrier • LSR]
+    BERT -->|Trigger Phrase| Evidence[Evidence Span]
+
+    Fields -->|Risk Factors| Score[SIF Potential Score<br/>Deterministic 0-100]
+    Evidence -->|Verbatim Evidence| Score
+
+    Fields -->|Control Prefix| Qwen[Tuned Qwen2-0.5B<br/>Decoder]
+
+    Qwen -->|Grounded Explanation| Explanation[Counterfactual<br/>Why It Could Turn Fatal]
+
+    Score -->|Rank & Escalate| HSE[HSE Console]
+    Explanation -->|Evidence + Rationale| HSE
+
+    HSE -->|Action| CAPA[CAPA / Triage / Heatmaps]
 ```
 
 ### Components:
